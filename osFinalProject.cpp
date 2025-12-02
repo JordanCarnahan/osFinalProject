@@ -1,332 +1,438 @@
-// osFinalProject.cpp
-// Simple Thread Scheduling Simulator
-// Allman-style braces version
-
 #include <iostream>
 #include <vector>
 #include <queue>
 #include <algorithm>
 #include <string>
 #include <iomanip>
+
 using namespace std;
 
-struct ThreadTCB
+struct ThreadInfo
 {
     string id;
     int arrival;
     int burst;
     int priority;
+
     int remaining;
     int completion;
+    int turnaround;
+    int waiting;
 };
 
-struct GanttEntry
+struct Block
 {
-    string id;
     int start;
     int end;
+    string id; // can be thread id or "IDLE"
 };
 
-void printGantt(const string &name, const vector<GanttEntry> &gantt)
+void resetThreads(vector<ThreadInfo> &threads)
 {
-    cout << "\n=== " << name << " Gantt Chart ===\n";
-
-    if (gantt.empty())
-    {
-        cout << "No execution recorded.\n";
-        return;
-    }
-
-    for (size_t i = 0; i < gantt.size(); i++)
-    {
-        cout << "[" << gantt[i].start << ", " << gantt[i].end << ") "
-             << gantt[i].id << "\n";
-    }
-}
-
-void printMetrics(const string &name, const vector<ThreadTCB> &threads, int totalBusyTime, int startTime, int endTime)
-{
-    cout << "\n=== " << name << " Metrics ===\n";
-
-    int n = threads.size();
-    double sumWaiting = 0;
-    double sumTurnaround = 0;
-
-    cout << "Thread\tArr\tBurst\tCompl\tWait\tTurn\n";
-
-    for (int i = 0; i < n; i++)
-    {
-        int turnaround = threads[i].completion - threads[i].arrival;
-        int waiting = turnaround - threads[i].burst;
-
-        sumWaiting += waiting;
-        sumTurnaround += turnaround;
-
-        cout << threads[i].id << "\t"
-             << threads[i].arrival << "\t"
-             << threads[i].burst << "\t"
-             << threads[i].completion << "\t"
-             << waiting << "\t"
-             << turnaround << "\n";
-    }
-
-    if (endTime <= startTime)
-    {
-        endTime = startTime + 1;
-    }
-
-    double avgWaiting = sumWaiting / n;
-    double avgTurnaround = sumTurnaround / n;
-    double cpuUtil = (double)totalBusyTime / (endTime - startTime) * 100.0;
-    double throughput = (double)n / (endTime - startTime);
-
-    cout << fixed << setprecision(2);
-    cout << "\nAverage waiting time: " << avgWaiting << "\n";
-    cout << "Average turnaround time: " << avgTurnaround << "\n";
-    cout << "CPU utilization: " << cpuUtil << " %\n";
-    cout << "Throughput: " << throughput << " threads/time unit\n";
-}
-//Jordan
-void simulateFCFS(vector<ThreadTCB> threads)
-{
-    sort(threads.begin(), threads.end(),
-         [](const ThreadTCB &a, const ThreadTCB &b)
-         {
-             return a.arrival < b.arrival;
-         });
-
-    int n = threads.size();
-    int currentTime = 0;
-    int totalBusyTime = 0;
-    vector<GanttEntry> gantt;
-
-    int minArrival = threads[0].arrival;
-
-    for (auto &t : threads)
-    {
-        if (t.arrival < minArrival)
-        {
-            minArrival = t.arrival;
-        }
-    }
-
-    for (int i = 0; i < n; i++)
-    {
-        if (currentTime < threads[i].arrival)
-        {
-            gantt.push_back({"IDLE", currentTime, threads[i].arrival});
-            currentTime = threads[i].arrival;
-        }
-
-        gantt.push_back({threads[i].id, currentTime, currentTime + threads[i].burst});
-
-        currentTime += threads[i].burst;
-        threads[i].completion = currentTime;
-        totalBusyTime += threads[i].burst;
-    }
-
-    printGantt("FCFS", gantt);
-    printMetrics("FCFS", threads, totalBusyTime, minArrival, currentTime);
-}
-
-//Caleb
-void simulateSJF(vector<ThreadTCB> threads)
-{
-    int n = threads.size();
-
-    for (int i = 0; i < n; i++)
+    for (size_t i = 0; i < threads.size(); i++)
     {
         threads[i].remaining = threads[i].burst;
-        threads[i].completion = -1;
+        threads[i].completion = 0;
+        threads[i].turnaround = 0;
+        threads[i].waiting = 0;
     }
+}
 
-    int currentTime = 0;
-    int completed = 0;
-    int totalBusyTime = 0;
-    vector<GanttEntry> gantt;
-    vector<bool> done(n, false);
+void computeMetrics(vector<ThreadInfo> &threads, double &avgWait, double &avgTurn, double &cpuUtil, double &throughput, int totalTime)
+{
+    int n = (int)threads.size();
+    int totalWait = 0;
+    int totalTurn = 0;
+    int totalBurst = 0;
 
-    int minArrival = threads[0].arrival;
-
-    for (auto &t : threads)
+    for (int i = 0; i < n; i++)
     {
-        if (t.arrival < minArrival)
-        {
-            minArrival = t.arrival;
-        }
+        threads[i].turnaround = threads[i].completion - threads[i].arrival;
+        threads[i].waiting = threads[i].turnaround - threads[i].burst;
+
+        totalWait += threads[i].waiting;
+        totalTurn += threads[i].turnaround;
+        totalBurst += threads[i].burst;
     }
 
-    currentTime = minArrival;
+    avgWait = (double)totalWait / n;
+    avgTurn = (double)totalTurn / n;
 
-    while (completed < n)
+    if (totalTime == 0)
+    {
+        cpuUtil = 0.0;
+        throughput = 0.0;
+    }
+    else
+    {
+        cpuUtil = ((double)totalBurst / (double)totalTime) * 100.0;
+        throughput = (double)n / (double)totalTime;
+    }
+}
+
+void printResults(const string &name, vector<ThreadInfo> threads, const vector<Block> &gantt)
+{
+    double avgWait = 0.0;
+    double avgTurn = 0.0;
+    double cpuUtil = 0.0;
+    double throughput = 0.0;
+
+    int totalTime = 0;
+    if (!gantt.empty())
+    {
+        totalTime = gantt.back().end;
+    }
+
+    computeMetrics(threads, avgWait, avgTurn, cpuUtil, throughput, totalTime);
+
+    cout << "\n=============================\n";
+    cout << name << " RESULTS\n";
+    cout << "=============================\n";
+
+    cout << "\nGantt Chart:\n";
+    for (size_t i = 0; i < gantt.size(); i++)
+    {
+        cout << "[" << gantt[i].start << "-" << gantt[i].end << "] " << gantt[i].id << "  ";
+    }
+    cout << "\n\n";
+
+    cout << left << setw(8) << "ID"
+         << setw(10) << "Arrive"
+         << setw(8) << "Burst"
+         << setw(10) << "Prior"
+         << setw(12) << "Complete"
+         << setw(12) << "Waiting"
+         << setw(12) << "Turnaround" << "\n";
+
+    for (size_t i = 0; i < threads.size(); i++)
+    {
+        cout << left << setw(8) << threads[i].id
+             << setw(10) << threads[i].arrival
+             << setw(8) << threads[i].burst
+             << setw(10) << threads[i].priority
+             << setw(12) << threads[i].completion
+             << setw(12) << threads[i].waiting
+             << setw(12) << threads[i].turnaround << "\n";
+    }
+
+    cout << "\nAverage waiting time   : " << avgWait << "\n";
+    cout << "Average turnaround time: " << avgTurn << "\n";
+    cout << "CPU Utilization        : " << cpuUtil << " %\n";
+    cout << "Throughput             : " << throughput << " threads/unit time\n";
+    cout << "Total simulation time  : " << totalTime << "\n\n";
+}
+
+// FCFS (non-preemptive)
+void scheduleFCFS(vector<ThreadInfo> threads)
+{
+    resetThreads(threads);
+    vector<Block> gantt;
+
+    // Sort by arrival time (and maybe ID as tie-breaker)
+    sort(threads.begin(), threads.end(), [](const ThreadInfo &a, const ThreadInfo &b)
+    {
+        if (a.arrival == b.arrival)
+        {
+            return a.id < b.id;
+        }
+        return a.arrival < b.arrival;
+    });
+
+    int time = 0;
+    for (size_t i = 0; i < threads.size(); i++)
+    {
+        if (time < threads[i].arrival)
+        {
+            Block idleBlock;
+            idleBlock.start = time;
+            idleBlock.end = threads[i].arrival;
+            idleBlock.id = "IDLE";
+            gantt.push_back(idleBlock);
+
+            time = threads[i].arrival;
+        }
+
+        Block blk;
+        blk.start = time;
+        blk.end = time + threads[i].burst;
+        blk.id = threads[i].id;
+        gantt.push_back(blk);
+
+        time += threads[i].burst;
+        threads[i].completion = time;
+    }
+
+    printResults("FCFS", threads, gantt);
+}
+
+// SJF (non-preemptive)
+void scheduleSJF(vector<ThreadInfo> threads)
+{
+    resetThreads(threads);
+    vector<Block> gantt;
+
+    int n = (int)threads.size();
+    int done = 0;
+    int time = 0;
+
+    while (done < n)
     {
         int idx = -1;
-        int minBurst = 1e9;
+        int bestBurst = 1000000000;
 
         for (int i = 0; i < n; i++)
         {
-            if (!done[i] && threads[i].arrival <= currentTime)
+            if (threads[i].remaining > 0 && threads[i].arrival <= time)
             {
-                if (threads[i].burst < minBurst)
+                if (threads[i].burst < bestBurst)
                 {
-                    minBurst = threads[i].burst;
+                    bestBurst = threads[i].burst;
                     idx = i;
+                }
+                else if (threads[i].burst == bestBurst)
+                {
+                    if (threads[i].arrival < threads[idx].arrival)
+                    {
+                        idx = i;
+                    }
                 }
             }
         }
 
         if (idx == -1)
         {
-            gantt.push_back({"IDLE", currentTime, currentTime + 1});
-            currentTime++;
+            int nextArrival = 1000000000;
+            for (int i = 0; i < n; i++)
+            {
+                if (threads[i].remaining > 0)
+                {
+                    if (threads[i].arrival < nextArrival)
+                    {
+                        nextArrival = threads[i].arrival;
+                    }
+                }
+            }
+
+            Block idleBlock;
+            idleBlock.start = time;
+            idleBlock.end = nextArrival;
+            idleBlock.id = "IDLE";
+            gantt.push_back(idleBlock);
+
+            time = nextArrival;
             continue;
         }
 
-        gantt.push_back({threads[idx].id, currentTime, currentTime + threads[idx].burst});
-        currentTime += threads[idx].burst;
+        Block blk;
+        blk.start = time;
+        blk.end = time + threads[idx].burst;
+        blk.id = threads[idx].id;
+        gantt.push_back(blk);
 
-        threads[idx].completion = currentTime;
-        done[idx] = true;
-        completed++;
-        totalBusyTime += threads[idx].burst;
+        time += threads[idx].burst;
+        threads[idx].remaining = 0;
+        threads[idx].completion = time;
+        done++;
     }
 
-    printGantt("SJF", gantt);
-    printMetrics("SJF", threads, totalBusyTime, minArrival, currentTime);
+    printResults("SJF (Non-preemptive)", threads, gantt);
 }
 
-//Caleb
-void simulatePriority(vector<ThreadTCB> threads)
+// Priority (preemptive, smaller priority number = higher priority)
+void schedulePriority(vector<ThreadInfo> threads)
 {
-    int n = threads.size();
+    resetThreads(threads);
+    vector<Block> gantt;
 
-    for (auto &t : threads)
-    {
-        t.remaining = t.burst;
-        t.completion = -1;
-    }
+    int n = (int)threads.size();
+    int done = 0;
+    int time = 0;
 
-    int currentTime = 0;
-    int completed = 0;
-    int totalBusyTime = 0;
-    vector<GanttEntry> gantt;
-    vector<bool> done(n, false);
+    string currentId = "";
+    int blockStart = 0;
 
-    int minArrival = threads[0].arrival;
-
-    for (auto &t : threads)
-    {
-        if (t.arrival < minArrival)
-        {
-            minArrival = t.arrival;
-        }
-    }
-
-    currentTime = minArrival;
-
-    while (completed < n)
+    while (done < n)
     {
         int idx = -1;
-        int bestP = 1e9;
+        int bestPrio = 1000000000;
 
         for (int i = 0; i < n; i++)
         {
-            if (!done[i] && threads[i].arrival <= currentTime)
+            if (threads[i].remaining > 0 && threads[i].arrival <= time)
             {
-                if (threads[i].priority < bestP)
+                if (threads[i].priority < bestPrio)
                 {
-                    bestP = threads[i].priority;
+                    bestPrio = threads[i].priority;
                     idx = i;
+                }
+                else if (threads[i].priority == bestPrio)
+                {
+                    if (threads[i].arrival < threads[idx].arrival)
+                    {
+                        idx = i;
+                    }
                 }
             }
         }
 
         if (idx == -1)
         {
-            gantt.push_back({"IDLE", currentTime, currentTime + 1});
-            currentTime++;
+            int nextArrival = 1000000000;
+            for (int i = 0; i < n; i++)
+            {
+                if (threads[i].remaining > 0)
+                {
+                    if (threads[i].arrival < nextArrival)
+                    {
+                        nextArrival = threads[i].arrival;
+                    }
+                }
+            }
+
+            if (currentId != "")
+            {
+                Block blk;
+                blk.start = blockStart;
+                blk.end = time;
+                blk.id = currentId;
+                gantt.push_back(blk);
+                currentId = "";
+            }
+
+            Block idleBlock;
+            idleBlock.start = time;
+            idleBlock.end = nextArrival;
+            idleBlock.id = "IDLE";
+            gantt.push_back(idleBlock);
+
+            time = nextArrival;
             continue;
         }
 
-        gantt.push_back({threads[idx].id, currentTime, currentTime + threads[idx].burst});
-        currentTime += threads[idx].burst;
+        if (currentId == "")
+        {
+            currentId = threads[idx].id;
+            blockStart = time;
+        }
+        else if (currentId != threads[idx].id)
+        {
+            Block blk;
+            blk.start = blockStart;
+            blk.end = time;
+            blk.id = currentId;
+            gantt.push_back(blk);
 
-        threads[idx].completion = currentTime;
-        done[idx] = true;
-        completed++;
-        totalBusyTime += threads[idx].burst;
+            currentId = threads[idx].id;
+            blockStart = time;
+        }
+
+        time += 1;
+        threads[idx].remaining--;
+
+        if (threads[idx].remaining == 0)
+        {
+            threads[idx].completion = time;
+            done++;
+        }
     }
 
-    printGantt("Priority", gantt);
-    printMetrics("Priority", threads, totalBusyTime, minArrival, currentTime);
+    if (currentId != "")
+    {
+        Block blk;
+        blk.start = blockStart;
+        blk.end = time;
+        blk.id = currentId;
+        gantt.push_back(blk);
+    }
+
+    printResults("Priority (Preemptive)", threads, gantt);
 }
 
-//Kanoa
-void simulateRR(vector<ThreadTCB> threads, int quantum)
+// Round Robin
+void scheduleRR(vector<ThreadInfo> threads, int quantum)
 {
-    if (quantum <= 0)
+    resetThreads(threads);
+    vector<Block> gantt;
+
+    int n = (int)threads.size();
+    int done = 0;
+    int time = 0;
+
+    // sort by arrival
+    vector<int> order(n);
+    for (int i = 0; i < n; i++)
     {
-        quantum = 1;
+        order[i] = i;
     }
 
-    sort(threads.begin(), threads.end(),
-         [](const ThreadTCB &a, const ThreadTCB &b)
-         {
-             return a.arrival < b.arrival;
-         });
-
-    int n = threads.size();
-
-    for (auto &t : threads)
+    sort(order.begin(), order.end(), [&](int a, int b)
     {
-        t.remaining = t.burst;
-        t.completion = -1;
-    }
-
-    int currentTime = threads[0].arrival;
-    int totalBusyTime = 0;
-    int completed = 0;
-    vector<GanttEntry> gantt;
+        if (threads[a].arrival == threads[b].arrival)
+        {
+            return threads[a].id < threads[b].id;
+        }
+        return threads[a].arrival < threads[b].arrival;
+    });
 
     queue<int> q;
-    vector<bool> added(n, false);
+    int nextIndex = 0;
 
-    auto addArrivals = [&](int time)
+    while (done < n)
     {
-        for (int i = 0; i < n; i++)
+        while (nextIndex < n && threads[order[nextIndex]].arrival <= time)
         {
-            if (!added[i] && threads[i].arrival <= time)
-            {
-                q.push(i);
-                added[i] = true;
-            }
+            q.push(order[nextIndex]);
+            nextIndex++;
         }
-    };
 
-    addArrivals(currentTime);
-
-    while (completed < n)
-    {
         if (q.empty())
         {
-            gantt.push_back({"IDLE", currentTime, currentTime + 1});
-            currentTime++;
-            addArrivals(currentTime);
-            continue;
+            if (nextIndex < n)
+            {
+                int nextArr = threads[order[nextIndex]].arrival;
+                Block idleBlock;
+                idleBlock.start = time;
+                idleBlock.end = nextArr;
+                idleBlock.id = "IDLE";
+                gantt.push_back(idleBlock);
+
+                time = nextArr;
+                while (nextIndex < n && threads[order[nextIndex]].arrival <= time)
+                {
+                    q.push(order[nextIndex]);
+                    nextIndex++;
+                }
+                continue;
+            }
+            else
+            {
+                break;
+            }
         }
 
         int idx = q.front();
         q.pop();
 
-        int runTime = min(threads[idx].remaining, quantum);
+        int runTime = quantum;
+        if (threads[idx].remaining < runTime)
+        {
+            runTime = threads[idx].remaining;
+        }
 
-        gantt.push_back({threads[idx].id, currentTime, currentTime + runTime});
+        Block blk;
+        blk.start = time;
+        blk.end = time + runTime;
+        blk.id = threads[idx].id;
+        gantt.push_back(blk);
 
+        time += runTime;
         threads[idx].remaining -= runTime;
-        currentTime += runTime;
-        totalBusyTime += runTime;
 
-        addArrivals(currentTime);
+        while (nextIndex < n && threads[order[nextIndex]].arrival <= time)
+        {
+            q.push(order[nextIndex]);
+            nextIndex++;
+        }
 
         if (threads[idx].remaining > 0)
         {
@@ -334,52 +440,43 @@ void simulateRR(vector<ThreadTCB> threads, int quantum)
         }
         else
         {
-            threads[idx].completion = currentTime;
-            completed++;
+            threads[idx].completion = time;
+            done++;
         }
     }
 
-    int minArrival = threads[0].arrival;
-
-    printGantt("Round Robin", gantt);
-    printMetrics("Round Robin", threads, totalBusyTime, minArrival, currentTime);
+    printResults("Round Robin", threads, gantt);
 }
 
-//Kanoa
 int main()
 {
     int n;
-
     cout << "How many threads? ";
     cin >> n;
 
-    if (n <= 0)
-    {
-        cout << "Invalid number.\n";
-        return 0;
-    }
+    vector<ThreadInfo> threads(n);
 
-    vector<ThreadTCB> threads(n);
-
-    cout << "Enter ID Arrival Burst Priority:\n";
+    cout << "Enter threads as: ID Arrival Burst Priority\n";
+    cout << "(Smaller priority number = higher priority)\n";
 
     for (int i = 0; i < n; i++)
     {
-        cin >> threads[i].id >> threads[i].arrival >>
-               threads[i].burst >> threads[i].priority;
-
+        cout << "Thread " << (i + 1) << ": ";
+        cin >> threads[i].id >> threads[i].arrival >> threads[i].burst >> threads[i].priority;
         threads[i].remaining = threads[i].burst;
-        threads[i].completion = -1;
+        threads[i].completion = 0;
+        threads[i].turnaround = 0;
+        threads[i].waiting = 0;
     }
 
     int quantum;
-    cout << "Enter Round Robin quantum: ";
+    cout << "Enter time quantum for Round Robin: ";
     cin >> quantum;
 
-    simulateFCFS(threads);
-    simulateSJF(threads);
-    simulatePriority(threads);
-    simulateRR(threads, quantum);
+    scheduleFCFS(threads);
+    scheduleSJF(threads);
+    schedulePriority(threads);
+    scheduleRR(threads, quantum);
 
     return 0;
 }
