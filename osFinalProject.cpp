@@ -44,8 +44,7 @@ void printGantt(const string &name, const vector<GanttEntry> &gantt)
     }
 }
 
-void printMetrics(const string &name, const vector<ThreadTCB> &threads,
-                  int totalBusyTime, int startTime, int endTime)
+void printMetrics(const string &name, const vector<ThreadTCB> &threads, int totalBusyTime, int startTime, int endTime)
 {
     cout << "\n=== " << name << " Metrics ===\n";
 
@@ -87,7 +86,7 @@ void printMetrics(const string &name, const vector<ThreadTCB> &threads,
     cout << "CPU utilization: " << cpuUtil << " %\n";
     cout << "Throughput: " << throughput << " threads/time unit\n";
 }
-
+//Jordan
 void simulateFCFS(vector<ThreadTCB> threads)
 {
     sort(threads.begin(), threads.end(),
@@ -130,6 +129,7 @@ void simulateFCFS(vector<ThreadTCB> threads)
     printMetrics("FCFS", threads, totalBusyTime, minArrival, currentTime);
 }
 
+//Caleb
 void simulateSJF(vector<ThreadTCB> threads)
 {
     int n = threads.size();
@@ -195,6 +195,7 @@ void simulateSJF(vector<ThreadTCB> threads)
     printMetrics("SJF", threads, totalBusyTime, minArrival, currentTime);
 }
 
+//Caleb
 void simulatePriority(vector<ThreadTCB> threads)
 {
     int n = threads.size();
@@ -260,6 +261,7 @@ void simulatePriority(vector<ThreadTCB> threads)
     printMetrics("Priority", threads, totalBusyTime, minArrival, currentTime);
 }
 
+//Kanoa
 void simulateRR(vector<ThreadTCB> threads, int quantum)
 {
     if (quantum <= 0)
@@ -343,6 +345,7 @@ void simulateRR(vector<ThreadTCB> threads, int quantum)
     printMetrics("Round Robin", threads, totalBusyTime, minArrival, currentTime);
 }
 
+//Kanoa
 int main()
 {
     int n;
