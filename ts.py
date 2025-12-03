@@ -1,15 +1,15 @@
 # thread_scheduler_simple.py
 # Very simple thread scheduling simulator in Python
-# FCFS, SJF, Priority (preemptive), Round Robin
+# FCFS, SJF (non-preemptive), SJF (preemptive),
+# Priority (preemptive), Round Robin
 # Requires: matplotlib
 
 import matplotlib.pyplot as plt
+import random
 
 # ==============================
 # Helper: read input
 # ==============================
-
-import random
 
 def read_threads_from_user():
     print("Choose input mode:")
@@ -66,7 +66,7 @@ def read_threads_from_user():
         quantum = int(input().strip())
 
         threads = []
-        for i in range(1, n+1):
+        for i in range(1, n + 1):
             t = {
                 "id": f"T{i}",
                 "arrival": random.randint(0, max_arr),
@@ -95,6 +95,7 @@ def print_metrics(name, result_threads):
     print(f"{name} RESULTS")
     print("==============================")
     print("ID  Arr  Burst  Prio  Comp  Wait  Turn")
+
     total_wait = 0
     total_turn = 0
     first_arr = min(t["arrival"] for t in result_threads)
@@ -161,7 +162,6 @@ def draw_gantt(schedule, title):
 # ==============================
 
 def run_fcfs(threads):
-    # copy input so we don't modify original
     ts = []
     for t in threads:
         ts.append({
@@ -182,7 +182,6 @@ def run_fcfs(threads):
 
     for t in ts:
         if time < t["arrival"]:
-            # CPU idle
             schedule.append(("IDLE", time, t["arrival"]))
             time = t["arrival"]
         start = time
@@ -200,7 +199,6 @@ def run_fcfs(threads):
 # ==============================
 
 def run_sjf(threads):
-    # similar to FCFS but pick shortest burst among ready threads
     ts = []
     for t in threads:
         ts.append({
@@ -220,16 +218,14 @@ def run_sjf(threads):
     n = len(ts)
 
     while finished < n:
-        # get all that have arrived and are not finished
         ready = [t for t in ts if t["arrival"] <= time and t["remaining"] > 0]
         if not ready:
-            # no one ready, jump to next arrival
             next_arrival = min(t["arrival"] for t in ts if t["remaining"] > 0)
             schedule.append(("IDLE", time, next_arrival))
             time = next_arrival
             continue
 
-        # pick shortest job
+        # pick shortest job by burst (non-preemptive)
         ready.sort(key=lambda x: x["burst"])
         t = ready[0]
 
@@ -242,6 +238,56 @@ def run_sjf(threads):
         t["turnaround"] = t["completion"] - t["arrival"]
         t["waiting"] = t["turnaround"] - t["burst"]
         finished += 1
+
+    return ts, schedule
+
+# ==============================
+# SJF (preemptive / Shortest Remaining Time First)
+# one time unit at a time
+# ==============================
+
+def run_sjf_preemptive(threads):
+    ts = []
+    for t in threads:
+        ts.append({
+            "id": t["id"],
+            "arrival": t["arrival"],
+            "burst": t["burst"],
+            "priority": t["priority"],
+            "remaining": t["burst"],
+            "completion": 0,
+            "waiting": 0,
+            "turnaround": 0
+        })
+
+    schedule = []
+    time = 0
+    n = len(ts)
+    finished = 0
+
+    while finished < n:
+        ready = [t for t in ts if t["arrival"] <= time and t["remaining"] > 0]
+        if not ready:
+            next_arrival = min(t["arrival"] for t in ts if t["remaining"] > 0)
+            schedule.append(("IDLE", time, next_arrival))
+            time = next_arrival
+            continue
+
+        # pick thread with smallest remaining time
+        ready.sort(key=lambda x: x["remaining"])
+        t = ready[0]
+
+        start = time
+        end = time + 1   # run 1 time unit
+        schedule.append((t["id"], start, end))
+        time = end
+        t["remaining"] -= 1
+
+        if t["remaining"] == 0:
+            t["completion"] = time
+            t["turnaround"] = t["completion"] - t["arrival"]
+            t["waiting"] = t["turnaround"] - t["burst"]
+            finished += 1
 
     return ts, schedule
 
@@ -270,20 +316,16 @@ def run_priority_preemptive(threads):
     finished = 0
 
     while finished < n:
-        # all arrived and not finished
         ready = [t for t in ts if t["arrival"] <= time and t["remaining"] > 0]
         if not ready:
-            # idle until next arrival
             next_arrival = min(t["arrival"] for t in ts if t["remaining"] > 0)
             schedule.append(("IDLE", time, next_arrival))
             time = next_arrival
             continue
 
-        # pick highest priority (smallest number)
         ready.sort(key=lambda x: x["priority"])
         t = ready[0]
 
-        # run for 1 time unit (preemptive)
         start = time
         end = time + 1
         schedule.append((t["id"], start, end))
@@ -296,7 +338,6 @@ def run_priority_preemptive(threads):
             t["waiting"] = t["turnaround"] - t["burst"]
             finished += 1
 
-    # Gantt has many 1-unit slices; that's fine
     return ts, schedule
 
 # ==============================
@@ -322,34 +363,28 @@ def run_round_robin(threads, quantum):
     n = len(ts)
     finished = 0
 
-    # ready queue stores indices
     ready = []
-
-    # sort by arrival so we can pull them in order
     ts_sorted = sorted(range(n), key=lambda i: ts[i]["arrival"])
     next_index_pos = 0
 
     while finished < n:
-        # add newly arrived threads to ready queue
         while (next_index_pos < n and
                ts[ts_sorted[next_index_pos]]["arrival"] <= time):
             ready.append(ts_sorted[next_index_pos])
             next_index_pos += 1
 
         if not ready:
-            # CPU idle, jump to next arrival
             if next_index_pos < n:
                 next_arrival = ts[ts_sorted[next_index_pos]]["arrival"]
                 schedule.append(("IDLE", time, next_arrival))
                 time = next_arrival
                 continue
             else:
-                break  # no one left
-        # pop first from queue
+                break
+
         idx = ready.pop(0)
         t = ts[idx]
 
-        # actual time slice
         slice_time = min(quantum, t["remaining"])
         start = time
         end = time + slice_time
@@ -357,14 +392,12 @@ def run_round_robin(threads, quantum):
         time = end
         t["remaining"] -= slice_time
 
-        # add any arrivals that came during this slice
         while (next_index_pos < n and
                ts[ts_sorted[next_index_pos]]["arrival"] <= time):
             ready.append(ts_sorted[next_index_pos])
             next_index_pos += 1
 
         if t["remaining"] > 0:
-            # still needs CPU, push back
             ready.append(idx)
         else:
             t["completion"] = time
@@ -379,24 +412,23 @@ def run_round_robin(threads, quantum):
 # ==============================
 
 def main():
-    # 1) Input
     threads, quantum = read_threads_from_user()
 
-    # 2) Run all algorithms
     fcfs_threads, fcfs_sched = run_fcfs(threads)
     sjf_threads, sjf_sched = run_sjf(threads)
+    sjfp_threads, sjfp_sched = run_sjf_preemptive(threads)
     prio_threads, prio_sched = run_priority_preemptive(threads)
     rr_threads, rr_sched = run_round_robin(threads, quantum)
 
-    # 3) Print metrics
     print_metrics("FCFS", fcfs_threads)
     print_metrics("SJF (non-preemptive)", sjf_threads)
+    print_metrics("SJF (preemptive)", sjfp_threads)
     print_metrics("Priority (preemptive)", prio_threads)
     print_metrics("Round Robin", rr_threads)
 
-    # 4) Draw Gantt charts
     draw_gantt(fcfs_sched, "FCFS")
-    draw_gantt(sjf_sched, "SJF")
+    draw_gantt(sjf_sched, "SJF (Non-Preemptive)")
+    draw_gantt(sjfp_sched, "SJF (Preemptive)")
     draw_gantt(prio_sched, "Priority (Preemptive)")
     draw_gantt(rr_sched, "Round Robin")
 
