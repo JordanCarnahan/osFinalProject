@@ -18,6 +18,7 @@ def read_threads_from_user():
         n = int(input().strip())
 
         print("Enter threads as: ID Arrival Burst Priority")
+        print("Example: T1 0 5 2")
         print("(Smaller priority number = HIGHER priority)")
 
         threads = []
@@ -167,19 +168,19 @@ def run_fcfs(threads):
     # Sort by arrival time
     ts.sort(key=lambda x: x["arrival"])
 
-    schedule = []
+    schedule = [] #empty array for schedule
     time = 0
 
     for t in ts:
-        if time < t["arrival"]:
+        if time < t["arrival"]: #if it hasnt arrived yet
             # CPU idle gap
-            schedule.append(("IDLE", time, t["arrival"]))
-            time = t["arrival"]
+            schedule.append(("IDLE", time, t["arrival"])) #add to schedule
+            time = t["arrival"] #set time of arrival
 
-        start = time
-        end = time + t["burst"]
-        schedule.append((t["id"], start, end))
-        time = end
+        start = time #start time
+        end = time + t["burst"] #end time after burst
+        schedule.append((t["id"], start, end)) #add to schedule
+        time = end #update time
 
         t["completion"] = time
         t["turnaround"] = t["completion"] - t["arrival"]
@@ -189,7 +190,7 @@ def run_fcfs(threads):
 
 # SJF (non-preemptive)
 def run_sjf(threads):
-    ts = []
+    ts = [] #make copt of inputs
     for t in threads:
         ts.append({
             "id": t["id"],
@@ -225,13 +226,13 @@ def run_sjf(threads):
         ready.sort(key=lambda x: x["burst"])
         t = ready[0]
 
-        start = time
-        end = time + t["burst"]
-        schedule.append((t["id"], start, end))
-        time = end
+        start = time #start time
+        end = time + t["burst"] #end time after burst
+        schedule.append((t["id"], start, end)) #add to schedule
+        time = end #update time
 
-        t["remaining"] = 0
-        t["completion"] = time
+        t["remaining"] = 0 #mark as finished
+        t["completion"] = time 
         t["turnaround"] = t["completion"] - t["arrival"]
         t["waiting"] = t["turnaround"] - t["burst"]
         finished += 1
